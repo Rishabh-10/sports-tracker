@@ -75,5 +75,3 @@ in the sidebar forces both. The first news fetch takes about a minute.
 ```powershell
 .venv\Scripts\python -m pytest
 ```
-
-See [PLAN.md](PLAN.md) for the roadmap.
