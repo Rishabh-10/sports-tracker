@@ -51,7 +51,7 @@ def test_ingest_tags_chunks_and_dedupes(temp_db, fake_embedder):
         assert stored.entities == "|f1:constructor:ferrari|f1:driver:leclerc|"
         assert stored.body.startswith("Charles Leclerc")
         assert count(session, Chunk) == 2
-        assert news_repo.keyword_search(session, '"strategy"', 5) == [f"{stored.id}:0"]
+        assert news_repo.keyword_search(session, ["strategy"], 5) == [f"{stored.id}:0"]
 
 
 def test_entity_feed_tags_existing_article(temp_db, fake_embedder):
@@ -73,4 +73,4 @@ def test_old_items_skipped_and_pruned(temp_db, fake_embedder):
                      index=INDEX, embedder=fake_embedder)
         assert news_repo.prune(session, utcnow() - timedelta(days=1)) == 1
         assert count(session, Article) == 0 and count(session, Chunk) == 0
-        assert news_repo.keyword_search(session, '"fresh"', 5) == []
+        assert news_repo.keyword_search(session, ["fresh"], 5) == []

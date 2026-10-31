@@ -34,10 +34,10 @@ class Hit:
     article: Article
 
 
-def keyword_query(text: str) -> str:
-    """FTS5 MATCH expression: the question's meaningful words, OR-ed and quoted."""
+def keyword_terms(text: str) -> list[str]:
+    """The question's meaningful words (lowercase, accents removed, no repeats), for keyword search."""
     words = [w for w in re.findall(r"\w+", normalize(text)) if len(w) > 1 and w not in STOPWORDS]
-    return " OR ".join(f'"{w}"' for w in dict.fromkeys(words))
+    return list(dict.fromkeys(words))
 
 
 def search(
@@ -57,7 +57,7 @@ def search(
 
     similarities = from_blobs([c.embedding for c in chunks]) @ embedder.embed_query(query)
     vector_ranked = [chunks[i].id for i in np.argsort(-similarities)[:CANDIDATES]]
-    keyword_ranked = [cid for cid in news_repo.keyword_search(session, keyword_query(query), CANDIDATES * 3)
+    keyword_ranked = [cid for cid in news_repo.keyword_search(session, keyword_terms(query), CANDIDATES * 3)
                       if cid in by_id][:CANDIDATES]
 
     scores: dict[str, float] = {}

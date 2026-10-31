@@ -2,7 +2,6 @@ from itertools import groupby
 
 import streamlit as st
 
-from sports_info import auth
 from sports_info.providers import get_providers
 from sports_info.services.events import refresh_events
 from sports_info.store import repo
@@ -64,20 +63,6 @@ def render() -> None:
         for error in report.errors:
             st.warning(error, icon=":material/warning:")
         st.success(f"Refreshed {len(report.refreshed)} dataset(s).")
-
-    st.subheader("Account")
-    with st.expander("Change password", icon=":material/key:"):
-        with st.form("change_password", clear_on_submit=True):
-            current = st.text_input("Current password", type="password", autocomplete="current-password")
-            new = st.text_input("New password", type="password", autocomplete="new-password")
-            if st.form_submit_button("Change password"):
-                try:
-                    with get_session() as session:
-                        auth.change_password(session, user_id, current, new)
-                except auth.AuthError as exc:
-                    st.error(str(exc))
-                else:
-                    st.success("Password changed.")
 
     st.subheader("Start over")
     confirm = st.checkbox("I want to clear my sports and teams and run setup again")

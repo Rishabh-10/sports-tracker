@@ -5,46 +5,45 @@ from sports_info.store import repo
 from sports_info.store.db import get_session
 
 
-def test_hash_and_verify():
-    stored = auth.hash_password("correct horse")
-    assert stored.startswith("scrypt$") and "correct horse" not in stored
-    assert auth.verify_password("correct horse", stored)
-    assert not auth.verify_password("wrong horse", stored)
-    assert auth.hash_password("correct horse") != stored  # salted
-    assert not auth.verify_password("x", "garbage")
-
-
-def test_register_and_authenticate(temp_db):
+def test_first_sign_in_creates_account_and_later_ones_reuse_it(temp_db):
     with get_session() as session:
-        user = auth.register(session, "  Alice ", "password123")
-        assert user.username == "alice"
-        assert auth.authenticate(session, "ALICE", "password123").id == user.id
-        assert auth.authenticate(session, "alice", "nope-nope") is None
-        assert auth.authenticate(session, "nobody", "password123") is None
+        user = auth.sign_in(session, "google-123", "alice@example.com", "Alice")
+        assert (user.google_sub, user.email, user.name) == ("google-123", "alice@example.com", "Alice")
+        assert auth.sign_in(session, "google-123", "alice@example.com", "Alice").id == user.id
+        assert repo.count_users(session) == 1
 
 
-@pytest.mark.parametrize("username,password,message", [
-    ("al", "password123", "3–32 characters"),
-    ("has space", "password123", "3–32 characters"),
-    ("bob", "short", "at least 8"),
-])
-def test_register_validation(temp_db, username, password, message):
-    with get_session() as session, pytest.raises(auth.AuthError, match=message):
-        auth.register(session, username, password)
-
-
-def test_duplicate_username_rejected(temp_db):
+def test_email_and_name_follow_the_google_account(temp_db):
     with get_session() as session:
-        auth.register(session, "alice", "password123")
-        with pytest.raises(auth.AuthError, match="taken"):
-            auth.register(session, "Alice", "password456")
-
-
-def test_change_password(temp_db):
+        user = auth.sign_in(session, "google-123", "alice@example.com", "Alice")
     with get_session() as session:
-        user = auth.register(session, "alice", "password123")
-        with pytest.raises(auth.AuthError, match="incorrect"):
-            auth.change_password(session, user.id, "wrong-one", "newpassword1")
-        auth.change_password(session, user.id, "password123", "newpassword1")
-        assert auth.authenticate(session, "alice", "newpassword1") is not None
-        assert repo.get_user(session, user.id).password_hash.startswith("scrypt$")
+        again = auth.sign_in(session, "google-123", "alice@new.example", "Alice B")
+    assert again.id == user.id
+    with get_session() as session:
+        stored = repo.get_user(session, user.id)
+        assert (stored.email, stored.name) == ("alice@new.example", "Alice B")
+
+
+def test_accounts_are_keyed_by_google_id_not_email(temp_db):
+    with get_session() as session:
+        first = auth.sign_in(session, "google-1", "shared@example.com", "One")
+        second = auth.sign_in(session, "google-2", "shared@example.com", "Two")
+        assert first.id != second.id
+
+
+def test_google_id_is_required(temp_db):
+    with get_session() as session, pytest.raises(ValueError):
+        auth.sign_in(session, "", "alice@example.com", "Alice")
+
+
+def test_simultaneous_first_sign_ins_share_one_account(temp_db, monkeypatch):
+    """Two tabs signing in at once: the one that loses the race picks up the other's account."""
+    with get_session() as other_tab:
+        winner = repo.create_user(other_tab, "google-123", "alice@example.com", "Alice")
+    real_lookup = repo.get_user_by_google_sub
+    lookups = iter([None])  # the first lookup runs before the other tab's insert lands
+    monkeypatch.setattr(repo, "get_user_by_google_sub",
+                        lambda session, sub: next(lookups, None) or real_lookup(session, sub))
+    with get_session() as session:
+        assert auth.sign_in(session, "google-123", "alice@example.com", "Alice").id == winner.id
+        assert repo.count_users(session) == 1
