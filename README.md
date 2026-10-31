@@ -127,5 +127,3 @@ each test):
 $env:TEST_DATABASE_URL = "postgresql://postgres:test@localhost:5432/sports_test"
 .venv\Scripts\python -m pytest
 ```
-
-See [PLAN.md](PLAN.md) for the roadmap.
