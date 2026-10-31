@@ -1,4 +1,8 @@
-"""Settings loaded from the environment (and a .env file at the project root)."""
+"""Settings loaded from the environment (and a .env file at the project root).
+
+On Streamlit Cloud, root-level entries in the app's Secrets are exported as environment
+variables before the app starts, so they are read here the same way.
+"""
 
 import os
 from datetime import timedelta
@@ -11,6 +15,10 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 DATA_DIR = Path(os.getenv("SPORTS_INFO_DATA_DIR") or PROJECT_ROOT / "data")
 DB_PATH = DATA_DIR / "sports_info.db"
+# Hosted Postgres (e.g. a Neon connection string). Unset: the SQLite file at DB_PATH.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+# Any long random string; users' own API keys are encrypted with it before they're stored.
+KEYS_ENCRYPTION_KEY = os.getenv("KEYS_ENCRYPTION_KEY", "").strip()
 
 MODELS_DIR = DATA_DIR / "models"
 

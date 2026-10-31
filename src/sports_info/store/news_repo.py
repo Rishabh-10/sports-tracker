@@ -1,4 +1,8 @@
-"""Read/write helpers for articles, chunks and the keyword index."""
+"""Read/write helpers for articles, chunks and the keyword index.
+
+The keyword index is an FTS5 table (`chunk_fts`) on SQLite and a tsvector column
+(`chunk.search`) on Postgres; see store/db.py.
+"""
 
 from collections.abc import Iterable
 from datetime import datetime
@@ -17,10 +21,23 @@ def existing_article_ids(session: Session, ids: Iterable[str]) -> set[str]:
     return set(session.exec(select(Article.id).where(col(Article.id).in_(ids))).all())
 
 
+def _is_postgres(session: Session) -> bool:
+    return session.get_bind().dialect.name == "postgresql"
+
+
 def add_article(session: Session, article: Article, chunks: list[Chunk]) -> None:
     session.add(article)
     session.add_all(chunks)
-    if chunks:
+    if not chunks:
+        return
+    if _is_postgres(session):
+        session.flush()  # the chunk rows must exist before their search column is filled
+        # 'simple' = no stemming or stop words, like FTS5's unicode61; normalize() strips accents.
+        session.connection().execute(
+            text("UPDATE chunk SET search = to_tsvector('simple', :text) WHERE id = :chunk_id"),
+            [{"chunk_id": c.id, "text": normalize(c.text)} for c in chunks],
+        )
+    else:
         session.connection().execute(
             text("INSERT INTO chunk_fts (chunk_id, text) VALUES (:chunk_id, :text)"),
             [{"chunk_id": c.id, "text": c.text} for c in chunks],
@@ -44,12 +61,13 @@ def prune(session: Session, before: datetime) -> int:
     old_ids = list(session.exec(select(Article.id).where(Article.published_utc < before)).all())
     if not old_ids:
         return 0
-    chunk_ids = list(session.exec(select(Chunk.id).where(col(Chunk.article_id).in_(old_ids))).all())
-    for start in range(0, len(chunk_ids), 500):
-        batch = chunk_ids[start : start + 500]
-        params = {f"c{i}": cid for i, cid in enumerate(batch)}
-        placeholders = ", ".join(f":c{i}" for i in range(len(batch)))
-        session.connection().execute(text(f"DELETE FROM chunk_fts WHERE chunk_id IN ({placeholders})"), params)
+    if not _is_postgres(session):  # on Postgres the index is a column, deleted with the chunk
+        chunk_ids = list(session.exec(select(Chunk.id).where(col(Chunk.article_id).in_(old_ids))).all())
+        for start in range(0, len(chunk_ids), 500):
+            batch = chunk_ids[start : start + 500]
+            params = {f"c{i}": cid for i, cid in enumerate(batch)}
+            placeholders = ", ".join(f":c{i}" for i in range(len(batch)))
+            session.connection().execute(text(f"DELETE FROM chunk_fts WHERE chunk_id IN ({placeholders})"), params)
     session.exec(delete(Chunk).where(col(Chunk.article_id).in_(old_ids)))
     session.exec(delete(Article).where(col(Article.id).in_(old_ids)))
     session.commit()
@@ -106,14 +124,23 @@ def candidate_chunks(session: Session, *, sports: Iterable[str], since: datetime
     return list(session.exec(query).all())
 
 
-def keyword_search(session: Session, match_query: str, limit: int) -> list[str]:
-    """Chunk ids ranked by BM25 for an FTS5 MATCH expression."""
-    if not match_query:
+def keyword_search(session: Session, terms: list[str], limit: int) -> list[str]:
+    """Chunk ids containing any of `terms` (lowercase words), best match first."""
+    if not terms:
         return []
-    rows = session.connection().execute(
-        text("SELECT chunk_id FROM chunk_fts WHERE chunk_fts MATCH :q ORDER BY rank LIMIT :limit"),
-        {"q": match_query, "limit": limit},
-    )
+    if _is_postgres(session):
+        # websearch_to_tsquery treats "or" as OR and never raises on odd input; ts_rank orders by term frequency.
+        rows = session.connection().execute(
+            text("SELECT id FROM chunk, websearch_to_tsquery('simple', :q) AS q WHERE search @@ q "
+                 "ORDER BY ts_rank(search, q) DESC, id LIMIT :limit"),
+            {"q": " or ".join(normalize(t) for t in terms), "limit": limit},
+        )
+    else:
+        # Quoted terms OR-ed together, ranked by FTS5's BM25.
+        rows = session.connection().execute(
+            text("SELECT chunk_id FROM chunk_fts WHERE chunk_fts MATCH :q ORDER BY rank LIMIT :limit"),
+            {"q": " OR ".join(f'"{t}"' for t in terms), "limit": limit},
+        )
     return [row[0] for row in rows]
 
 

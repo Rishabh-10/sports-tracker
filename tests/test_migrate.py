@@ -1,6 +1,9 @@
-"""Databases from before accounts existed: the first account inherits the old setup."""
+"""Older databases: from before accounts existed (the first account inherits the old setup),
+and from the username/password version (the app asks for a fresh database)."""
 
 import sqlite3
+
+import pytest
 
 from sports_info import auth
 from sports_info.store import db, repo
@@ -29,8 +32,8 @@ def test_first_account_claims_old_setup(tmp_path):
     engine = db.init_db(path)
     try:
         with get_session() as session:
-            first = auth.register(session, "owner", "password123")
-            second = auth.register(session, "guest", "password123")
+            first = auth.sign_in(session, "google-owner", "owner@example.com", "Owner")
+            second = auth.sign_in(session, "google-guest", "guest@example.com", "Guest")
             profile = repo.get_profile(session, first.id)
             assert (profile.timezone, profile.days_ahead, profile.onboarded) == ("Asia/Calcutta", 9, True)
             assert [f.name for f in repo.get_follows(session, first.id)] == ["Formula 1", "Charles Leclerc"]
@@ -50,8 +53,24 @@ def test_reopening_migrated_db_is_a_no_op(tmp_path):
     engine = db.init_db(path)  # second start: nothing left to migrate
     try:
         with get_session() as session:
-            user = auth.register(session, "owner", "password123")
+            user = auth.sign_in(session, "google-owner", "owner@example.com", "Owner")
             assert len(repo.get_follows(session, user.id)) == 2
     finally:
         engine.dispose()
         db._engine = None
+
+
+def test_password_accounts_database_asks_to_start_fresh(tmp_path):
+    path = tmp_path / "passwords.db"
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE user (id INTEGER PRIMARY KEY, username VARCHAR, password_hash VARCHAR, created_at DATETIME);
+        INSERT INTO user VALUES (1, 'alice', 'scrypt$...', '2026-10-28 10:00:00');
+    """)
+    conn.commit()
+    conn.close()
+    with pytest.raises(db.LegacyDatabaseError, match="start fresh"):
+        db.init_db(path)
+    db._engine = None
+    # Left untouched, so nothing is lost if it was opened by mistake.
+    assert sqlite3.connect(path).execute("SELECT username FROM user").fetchall() == [("alice",)]

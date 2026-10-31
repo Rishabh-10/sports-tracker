@@ -5,6 +5,7 @@ from sports_info import config, keys
 from sports_info.llm.gemini import get_llm
 from sports_info.providers import get_provider
 from sports_info.store.db import get_session
+from sports_info.store.models import UserApiKeys
 
 
 @pytest.fixture
@@ -33,6 +34,50 @@ def test_own_key_beats_shared_and_removal_falls_back(make_user, monkeypatch):
         assert (keys.for_user(session, user).gemini, keys.for_user(session, user).gemini_source) == ("my-gemini", "yours")
         keys.set_key(session, user, "gemini", "")
         assert keys.for_user(session, user).gemini == "shared-gemini"
+
+
+def stored_value(user_id, service):
+    with get_session() as session:
+        return getattr(session.get(UserApiKeys, user_id), service)
+
+
+def test_keys_are_encrypted_at_rest(make_user, no_shared_keys, monkeypatch):
+    monkeypatch.setattr(config, "KEYS_ENCRYPTION_KEY", "test-secret")
+    user = make_user("alice")
+    with get_session() as session:
+        keys.set_key(session, user, "gemini", "my-gemini-key-1234")
+    stored = stored_value(user, "gemini")
+    assert stored.startswith(keys.ENCRYPTED_PREFIX) and "my-gemini-key" not in stored
+    with get_session() as session:
+        assert keys.for_user(session, user).gemini == "my-gemini-key-1234"
+        assert keys.own_key(session, user, "gemini") == "my-gemini-key-1234"
+        keys.set_key(session, user, "gemini", "")
+    assert stored_value(user, "gemini") == ""  # removing a key stores nothing, not an encrypted ""
+
+
+def test_plain_text_keys_saved_before_encryption_still_work(make_user, no_shared_keys, monkeypatch):
+    user = make_user("alice")
+    with get_session() as session:
+        keys.set_key(session, user, "football_data", "old-plain-key")  # no KEYS_ENCRYPTION_KEY yet
+    assert stored_value(user, "football_data") == "old-plain-key"
+    monkeypatch.setattr(config, "KEYS_ENCRYPTION_KEY", "test-secret")
+    with get_session() as session:
+        assert keys.for_user(session, user).football_data == "old-plain-key"
+        keys.set_key(session, user, "football_data", "new-key")  # re-saving encrypts it
+    assert stored_value(user, "football_data").startswith(keys.ENCRYPTED_PREFIX)
+
+
+def test_undecryptable_key_reads_as_unset(make_user, monkeypatch):
+    monkeypatch.setattr(config, "KEYS_ENCRYPTION_KEY", "first-secret")
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "shared-gemini")
+    user = make_user("alice")
+    with get_session() as session:
+        keys.set_key(session, user, "gemini", "my-gemini")
+    for changed in ("second-secret", ""):
+        monkeypatch.setattr(config, "KEYS_ENCRYPTION_KEY", changed)
+        with get_session() as session:
+            effective = keys.for_user(session, user)
+        assert (effective.gemini, effective.gemini_source) == ("shared-gemini", "shared")
 
 
 def test_get_llm_needs_a_key(no_shared_keys):
