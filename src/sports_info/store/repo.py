@@ -1,4 +1,4 @@
-"""Read/write helpers over the SQLite tables."""
+"""Read/write helpers over the database tables."""
 
 from collections.abc import Iterable
 from datetime import datetime, timedelta
@@ -24,12 +24,12 @@ def get_user(session: Session, user_id: int) -> User | None:
     return session.get(User, user_id)
 
 
-def get_user_by_username(session: Session, username: str) -> User | None:
-    return session.exec(select(User).where(User.username == username.strip().lower())).first()
+def get_user_by_google_sub(session: Session, google_sub: str) -> User | None:
+    return session.exec(select(User).where(User.google_sub == google_sub)).first()
 
 
-def create_user(session: Session, username: str, password_hash: str) -> User:
-    user = User(username=username.strip().lower(), password_hash=password_hash)
+def create_user(session: Session, google_sub: str, email: str | None = None, name: str | None = None) -> User:
+    user = User(google_sub=google_sub, email=email, name=name)
     session.add(user)
     session.commit()
     session.refresh(user)

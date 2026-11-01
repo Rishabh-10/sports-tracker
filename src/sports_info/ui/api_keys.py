@@ -1,16 +1,24 @@
-"""Sidebar panel where each user adds, replaces or removes their own API keys."""
+"""Sidebar panel where each user adds, replaces or removes their own API keys.
+
+Keys live only in st.session_state: never written to the database, and gone after a refresh,
+sign-out or switch of account (session.py clears the session state on each).
+"""
 
 import streamlit as st
 
 from sports_info import keys
-from sports_info.store.db import get_session
 
 SAVED_FLAG = "api_key_saved"
+OWN_KEYS = "api_keys"
 
 
-def keys_for(user_id: int) -> keys.ApiKeys:
-    with get_session() as session:
-        return keys.for_user(session, user_id)
+def _own_keys() -> dict[str, str]:
+    return st.session_state.setdefault(OWN_KEYS, {})
+
+
+def keys_for() -> keys.ApiKeys:
+    """The keys in effect for this session: the user's own, else the app's shared ones."""
+    return keys.resolve(_own_keys())
 
 
 def _status(service: str, effective: keys.ApiKeys, own: str) -> str:
@@ -22,17 +30,16 @@ def _status(service: str, effective: keys.ApiKeys, own: str) -> str:
     return ":orange[Not set]"
 
 
-def _service_row(user_id: int, service: str, effective: keys.ApiKeys) -> None:
+def _service_row(service: str, effective: keys.ApiKeys) -> None:
     label = keys.SERVICES[service]
-    with get_session() as session:
-        own = keys.own_key(session, user_id, service)
+    own = _own_keys().get(service, "")
     st.markdown(f"**{label}** · {_status(service, effective, own)}")
     with st.form(f"api_key_{service}", clear_on_submit=True, border=False):
         value = st.text_input(
             f"{label} API key", type="password", label_visibility="collapsed", autocomplete="off",
             placeholder="Paste a new key to replace yours" if own else "Paste your key",
         )
-        submitted = st.form_submit_button("Save", width="stretch")
+        submitted = st.form_submit_button("Use this key", width="stretch")
     if submitted:
         value = value.strip()
         if not value:
@@ -44,26 +51,25 @@ def _service_row(user_id: int, service: str, effective: keys.ApiKeys) -> None:
             except keys.InvalidKey as exc:
                 st.error(str(exc))
             else:
-                with get_session() as session:
-                    keys.set_key(session, user_id, service, value)
-                st.session_state[SAVED_FLAG] = f"{label} key saved."
+                _own_keys()[service] = value
+                st.session_state[SAVED_FLAG] = f"Using your {label} key for this session."
                 st.session_state["force_refresh"] = True  # fetch anything the old key couldn't
                 st.rerun()
     links = f"[Get a free key]({keys.SIGNUP_URLS[service]})"
     st.caption(links)
     if own and st.button("Remove my key", key=f"remove_{service}", type="tertiary", icon=":material/delete:"):
-        with get_session() as session:
-            keys.set_key(session, user_id, service, "")
+        _own_keys().pop(service, None)
         st.session_state[SAVED_FLAG] = f"{label} key removed."
         st.rerun()
 
 
-def sidebar(user_id: int) -> None:
+def sidebar() -> None:
     if message := st.session_state.pop(SAVED_FLAG, None):
         st.toast(message, icon=":material/key:")
-    effective = keys_for(user_id)
+    effective = keys_for()
     missing = any(effective.source(service) == "none" for service in keys.SERVICES)
     with st.sidebar.expander("API keys", icon=":material/key:", expanded=missing):
-        st.caption("Your keys are private to your account and are only shown masked.")
+        st.caption("Keys you add here are kept only for this browser session and are never saved. "
+                   "Paste them again after a refresh or when you sign in again.")
         for service in keys.SERVICES:
-            _service_row(user_id, service, effective)
+            _service_row(service, effective)

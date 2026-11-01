@@ -1,17 +1,25 @@
+import os
 import re
 import zlib
 
 import numpy as np
 import pytest
+from sqlmodel import SQLModel
 
 from sports_info.store import db
+
+# Set to run the suite against Postgres, e.g. postgresql://postgres:test@localhost:5432/sports_test.
+# Every table in that database is dropped after each test, so use a database just for tests.
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "")
 
 
 @pytest.fixture
 def temp_db(tmp_path):
-    """Point the app at a throwaway SQLite file."""
-    engine = db.init_db(tmp_path / "test.db")
+    """Point the app at a throwaway database: a SQLite file, or Postgres if TEST_DATABASE_URL is set."""
+    engine = db.init_db(url=TEST_DATABASE_URL) if TEST_DATABASE_URL else db.init_db(tmp_path / "test.db")
     yield engine
+    if TEST_DATABASE_URL:
+        SQLModel.metadata.drop_all(engine)
     engine.dispose()
     db._engine = None
 
@@ -42,12 +50,12 @@ def fake_embedder():
 
 @pytest.fixture
 def make_user(temp_db):
-    """Create a user directly (no password hashing cost) and return its id."""
+    """Create a user directly (as if they'd signed in with Google) and return its id."""
     from sports_info.store import repo
     from sports_info.store.db import get_session
 
-    def create(username: str) -> int:
+    def create(name: str) -> int:
         with get_session() as session:
-            return repo.create_user(session, username, "unused-hash").id
+            return repo.create_user(session, f"google-{name}", f"{name}@example.com", name.title()).id
 
     return create

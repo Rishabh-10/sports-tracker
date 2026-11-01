@@ -1,4 +1,4 @@
-"""SQLite tables. All datetimes are timezone-aware UTC."""
+"""Database tables (SQLite or Postgres). All datetimes are timezone-aware UTC."""
 
 from datetime import datetime, timezone
 
@@ -11,8 +11,10 @@ def utcnow() -> datetime:
 
 class User(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    username: str = Field(unique=True, index=True)  # stored lowercase
-    password_hash: str
+    # Google's permanent account ID (the OIDC "sub" claim); email and name can change, this can't.
+    google_sub: str = Field(unique=True, index=True)
+    email: str | None = None
+    name: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -40,15 +42,6 @@ class Follow(SQLModel, table=True):
     kind: str
     external_id: str
     name: str
-
-
-class UserApiKeys(SQLModel, table=True):
-    """A user's own API keys. Empty means "use the app's shared key from .env, if any"."""
-
-    user_id: int = Field(primary_key=True, foreign_key="user.id")
-    football_data: str = ""
-    gemini: str = ""
-    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class Conversation(SQLModel, table=True):

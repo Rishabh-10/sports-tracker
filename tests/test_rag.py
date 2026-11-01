@@ -8,10 +8,10 @@ from sports_info.news.feeds import Feed
 from sports_info.news.ingest import FeedItem, ingest_items
 from sports_info.providers.base import catalog_item
 from sports_info.rag.answer import SYSTEM_PROMPT, prepare, stream_answer
-from sports_info.rag.retriever import keyword_query, search
+from sports_info.rag.retriever import keyword_terms, search
 from sports_info.store import news_repo, repo
 from sports_info.store.db import get_session
-from sports_info.store.models import Event, Follow, utcnow
+from sports_info.store.models import Chunk, Event, Follow, utcnow
 
 F1_FEED = Feed("https://bbc.test/f1.xml", "BBC Sport", "f1")
 FOOTBALL_FEED = Feed("https://bbc.test/football.xml", "BBC Sport", "football")
@@ -23,8 +23,25 @@ def add_news(session, embedder, feed, *stories, index=EntityIndex([])):
     ingest_items(session, feed, items, index=index, embedder=embedder)
 
 
-def test_keyword_query_drops_stopwords():
-    assert keyword_query("What is the latest on Leclerc's injury?") == '"leclerc" OR "injury"'
+def test_keyword_terms_drop_stopwords_and_accents():
+    assert keyword_terms("What is the latest on Leclerc's injury?") == ["leclerc", "injury"]
+    assert keyword_terms("Is Pérez out? Pérez said so") == ["perez", "out", "said"]
+
+
+def test_keyword_search_ignores_accents_and_ranks(temp_db, fake_embedder):
+    with get_session() as session:
+        add_news(session, fake_embedder, F1_FEED,
+                 ("Pérez extends contract", "Sergio Pérez signs for two more years. Pérez is delighted."),
+                 ("Midfield battle heats up", "Ocon praised Perez after a long race in which Haas, Alpine, "
+                  "Williams and Sauber all scored points and the midfield fight went down to the final lap."),
+                 ("Unrelated", "Gasly tests the new car."))
+        session.commit()
+        ids = news_repo.keyword_search(session, ["perez"], 10)
+        titles = [session.get(Chunk, cid).text for cid in ids]
+        assert len(ids) == 2 and titles[0].startswith("Pérez extends")  # more mentions rank first
+        assert news_repo.keyword_search(session, ["pérez"], 10) == ids
+        assert news_repo.keyword_search(session, ["nobody"], 10) == []
+        assert news_repo.keyword_search(session, [], 10) == []
 
 
 def test_hybrid_search_ranks_relevant_and_filters_sport(temp_db, fake_embedder):

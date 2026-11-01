@@ -17,6 +17,7 @@ from sports_info.store import repo
 from sports_info.store.db import get_session
 from sports_info.store.models import Article, Event, Follow, utcnow
 from sports_info.timefmt import day_label, relative, short_datetime, short_time, to_local
+from sports_info.ui.api_keys import keys_for
 from sports_info.ui.session import require_user_id
 
 CSS = """
@@ -79,7 +80,7 @@ def ensure_fresh() -> RefreshReport:
     """Refresh stale data (or everything, if the Refresh button was pressed) and show problems."""
     force = st.session_state.pop("force_refresh", False)
     with st.spinner("Fetching the latest fixtures..."):
-        report = refresh_events(require_user_id(), force=force)
+        report = refresh_events(require_user_id(), keys_for(), force=force)
     for error in report.errors:
         st.warning(error, icon=":material/warning:")
     return report

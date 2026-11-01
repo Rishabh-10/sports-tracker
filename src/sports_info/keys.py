@@ -1,12 +1,12 @@
-"""Per-user API keys, with the .env keys as a shared fallback."""
+"""API keys: the user's own (kept only in their browser session, never stored), with the
+.env keys as a shared fallback."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import httpx
-from sqlmodel import Session
 
 from sports_info import config
-from sports_info.store.models import UserApiKeys, utcnow
 
 SERVICES = {
     "football_data": "football-data.org",
@@ -43,27 +43,11 @@ def _pick(own: str, shared: str) -> tuple[str, str]:
     return "", "none"
 
 
-def for_user(session: Session, user_id: int) -> ApiKeys:
-    own = session.get(UserApiKeys, user_id) or UserApiKeys(user_id=user_id)
-    football, football_source = _pick(own.football_data, config.FOOTBALL_DATA_API_KEY)
-    gemini, gemini_source = _pick(own.gemini, config.GEMINI_API_KEY)
+def resolve(own: Mapping[str, str]) -> ApiKeys:
+    """The keys in effect, given the user's own keys for this session ({service: key})."""
+    football, football_source = _pick(own.get("football_data", ""), config.FOOTBALL_DATA_API_KEY)
+    gemini, gemini_source = _pick(own.get("gemini", ""), config.GEMINI_API_KEY)
     return ApiKeys(football, gemini, football_source, gemini_source)
-
-
-def own_key(session: Session, user_id: int, service: str) -> str:
-    own = session.get(UserApiKeys, user_id)
-    return getattr(own, service) if own else ""
-
-
-def set_key(session: Session, user_id: int, service: str, value: str) -> None:
-    """Store (or with an empty value, remove) one of the user's keys."""
-    if service not in SERVICES:
-        raise ValueError(service)
-    own = session.get(UserApiKeys, user_id) or UserApiKeys(user_id=user_id)
-    setattr(own, service, value.strip())
-    own.updated_at = utcnow()
-    session.add(own)
-    session.commit()
 
 
 def mask(key: str) -> str:

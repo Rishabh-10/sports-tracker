@@ -47,7 +47,7 @@ def render() -> None:
             since=utcnow() - config.NEWS_RETENTION, limit=limit + 1,
         )
 
-    llm = get_llm(keys_for(user_id))
+    llm = get_llm(keys_for())
     if llm is not None and articles:
         if about == MINE:
             target = "the teams and drivers I follow"

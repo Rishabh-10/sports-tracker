@@ -5,7 +5,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from sports_info import config, keys
+from sports_info import config
+from sports_info.keys import ApiKeys
 from sports_info.providers import get_provider
 from sports_info.providers.http import ProviderError
 from sports_info.services.catalog import teams_by_competition
@@ -28,7 +29,7 @@ def followed_competitions(follows: Iterable[Follow]) -> dict[str, set[str]]:
     return competitions
 
 
-def refresh_events(user_id: int, *, force: bool = False) -> RefreshReport:
+def refresh_events(user_id: int, user_keys: ApiKeys, *, force: bool = False) -> RefreshReport:
     """Fetch the season's fixtures for each competition the user follows whose cache is stale.
 
     The fixtures cache itself is shared: another user following the same competition reuses it.
@@ -36,7 +37,6 @@ def refresh_events(user_id: int, *, force: bool = False) -> RefreshReport:
     report = RefreshReport()
     with get_session() as session:
         follows = repo.get_follows(session, user_id)
-        user_keys = keys.for_user(session, user_id)
         for sport, competition_ids in followed_competitions(follows).items():
             provider = get_provider(sport, user_keys)
             if not provider.is_configured():
