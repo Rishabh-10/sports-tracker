@@ -86,7 +86,7 @@ def _names(sport: str, kind: str) -> dict[str, str]:
 
 def _step_sports(state: dict[str, Any]) -> bool:
     st.markdown("**Which sports do you follow?**")
-    providers = list(get_providers(keys_for(state["user_id"])).values())
+    providers = list(get_providers(keys_for()).values())
     selected = []
     for column, provider in zip(st.columns(len(providers)), providers):
         with column, st.container(border=True):
@@ -104,7 +104,7 @@ def _step_sports(state: dict[str, Any]) -> bool:
 
 def _step_competitions(state: dict[str, Any]) -> bool:
     ok = True
-    user_keys = keys_for(state["user_id"])
+    user_keys = keys_for()
     for sport in state["sports"]:
         provider = get_provider(sport, user_keys)
         st.markdown(f"#### {provider.icon} {provider.label}")
@@ -131,7 +131,7 @@ def _step_competitions(state: dict[str, Any]) -> bool:
 
 
 def _step_follows(state: dict[str, Any]) -> bool:
-    user_keys = keys_for(state["user_id"])
+    user_keys = keys_for()
     for sport in state["sports"]:
         provider = get_provider(sport, user_keys)
         st.markdown(f"#### {provider.icon} {provider.label}")

@@ -44,15 +44,6 @@ class Follow(SQLModel, table=True):
     name: str
 
 
-class UserApiKeys(SQLModel, table=True):
-    """A user's own API keys, encrypted (see keys.py). Empty means "use the app's shared key, if any"."""
-
-    user_id: int = Field(primary_key=True, foreign_key="user.id")
-    football_data: str = ""
-    gemini: str = ""
-    updated_at: datetime = Field(default_factory=utcnow)
-
-
 class Conversation(SQLModel, table=True):
     """A chat on the Ask page."""
 

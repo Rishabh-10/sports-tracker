@@ -59,8 +59,8 @@ file there loses every account. Use a hosted Postgres instead:
 2. Add `https://<your-app>.streamlit.app/oauth2callback` to the Google OAuth client's
    redirect URIs.
 3. In the app's **Settings → Secrets**, paste `.streamlit/secrets.toml.example` with your
-   values: `DATABASE_URL`, `KEYS_ENCRYPTION_KEY`, and the `[auth]` section with
-   `redirect_uri` set to the `streamlit.app` URL above.
+   values: `DATABASE_URL` and the `[auth]` section with `redirect_uri` set to the
+   `streamlit.app` URL above.
 4. Reboot the app and sign in once to check it works.
 
 ## API keys
@@ -71,13 +71,11 @@ file there loses every account. Use a hosted Postgres instead:
 | Gemini | Written answers on Ask, "Catch me up" briefings | free at aistudio.google.com/apikey |
 
 Each user adds their own keys under **API keys** in the sidebar. Keys are checked with the
-service before they're saved, stay private to that account, and are only ever shown masked
-(last 4 characters). Keys in `.env` (`FOOTBALL_DATA_API_KEY`, `GEMINI_API_KEY`) are an
-optional shared fallback for users who haven't added their own. When `KEYS_ENCRYPTION_KEY`
-is set, saved keys are encrypted in the database; keep that secret stable, because changing
-it means users have to add their keys again. Without it (fine for a local install) keys are
-stored as plain text, so keep `data/` private. Plain-text keys saved before you set it keep
-working and are encrypted the next time they're saved.
+service, only ever shown masked (last 4 characters), and kept only for that browser
+session: they're never written to the database, so users paste them again after a refresh
+or a new sign-in. Keys in `.env` or the app's secrets (`FOOTBALL_DATA_API_KEY`,
+`GEMINI_API_KEY`) are an optional shared fallback for users who haven't added their own;
+everyone's usage then counts against your key.
 
 F1 and news need no key. Without the football key you can still pick competitions, but
 the app will ask for the key before it can show matches. Without the Gemini key, Ask
@@ -93,7 +91,7 @@ Each question makes exactly one Gemini call. If you hit the free daily limit, se
   interface (football-data.org for football, Jolpica for F1).
 - `src/sports_info/auth.py`: maps a Google account (via `st.login`) to a local account.
 - `src/sports_info/store/`: SQLModel over Postgres (`DATABASE_URL`) or SQLite. Per-user
-  tables (`user`, `userprofile`, `follow`, `userapikeys`, `conversation`, `chatmessage`) are
+  tables (`user`, `userprofile`, `follow`, `conversation`, `chatmessage`) are
   always queried by `user_id`; shared tables hold the cached wizard options, matches/races,
   and news articles with their embeddings.
 - `src/sports_info/services/`: refreshes fixtures when stale and picks the events relevant to you.

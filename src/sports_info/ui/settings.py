@@ -50,7 +50,7 @@ def render() -> None:
         st.rerun()
 
     st.subheader("Data sources")
-    user_providers = get_providers(keys_for(user_id))
+    user_providers = get_providers(keys_for())
     with get_session() as session:
         for sport, provider in user_providers.items():
             last = repo.latest_fetch(session, f"events:{sport}:")
@@ -59,7 +59,7 @@ def render() -> None:
             st.markdown(f"- {provider.icon} **{provider.label}**: {status} · {updated}")
     if st.button("Refresh all data now", icon=":material/refresh:"):
         with st.spinner("Fetching everything again..."):
-            report = refresh_events(user_id, force=True)
+            report = refresh_events(user_id, keys_for(), force=True)
         for error in report.errors:
             st.warning(error, icon=":material/warning:")
         st.success(f"Refreshed {len(report.refreshed)} dataset(s).")

@@ -27,6 +27,8 @@ def run_app(temp_db):
 
     def run(user=None, *, configured=True, app=None):
         app = app or AppTest.from_file(APP, default_timeout=30)
+        # Always pass secrets: with none, AppTest falls back to the developer's real .streamlit/secrets.toml.
+        app.secrets["TEST"] = "isolated"
         if configured:
             app.secrets["auth"] = AUTH
         # st.user reads the identity Streamlit decoded from the login cookie; stand in for it here.
@@ -73,6 +75,27 @@ def test_returning_user_gets_their_own_account(run_app):
 def test_switching_google_accounts_clears_the_previous_session(run_app):
     app = run_app(ALICE)
     app.session_state["chat_draft"] = "alice's unsent question"
+    app.session_state["api_keys"] = {"gemini": "alice-gemini-key"}
     app = run_app({"is_logged_in": True, "sub": "google-bob", "email": "bob@example.com", "name": "Bob"}, app=app)
     assert "Signed in as **Bob**" in app.sidebar.caption[0].value
     assert "chat_draft" not in app.session_state
+    assert app.session_state["api_keys"] == {}  # Bob never gets Alice's keys
+
+
+def test_own_api_keys_stay_in_the_session_not_the_database(run_app, monkeypatch):
+    from sqlalchemy import inspect
+
+    from sports_info import config, keys
+    from sports_info.store.db import init_db
+
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "")
+    monkeypatch.setattr(keys, "VALIDATORS", {**keys.VALIDATORS, "gemini": lambda key: None})  # no network
+    app = run_app(ALICE)
+    next(t for t in app.sidebar.text_input if t.label == "Gemini API key").input("my-gemini-key-1234")
+    use_buttons = [b for b in app.sidebar.button if b.label == "Use this key"]  # football-data, then Gemini
+    with mock.patch.object(streamlit.user_info, "_get_user_info", return_value=ALICE):
+        use_buttons[1].click().run()
+    assert not app.exception, app.exception
+    assert app.session_state["api_keys"] == {"gemini": "my-gemini-key-1234"}
+    assert any("Using your key" in m.value for m in app.sidebar.markdown)
+    assert "userapikeys" not in inspect(init_db()).get_table_names()

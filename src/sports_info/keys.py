@@ -1,21 +1,12 @@
-"""Per-user API keys, with the .env keys as a shared fallback.
+"""API keys: the user's own (kept only in their browser session, never stored), with the
+.env keys as a shared fallback."""
 
-Keys are encrypted with KEYS_ENCRYPTION_KEY before they're stored. Without it (fine for a
-local install) they're stored as plain text, and plain-text keys saved before encryption
-was turned on keep working until they're next saved.
-"""
-
-import base64
-import hashlib
-import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import httpx
-from cryptography.fernet import Fernet, InvalidToken
-from sqlmodel import Session
 
 from sports_info import config
-from sports_info.store.models import UserApiKeys, utcnow
 
 SERVICES = {
     "football_data": "football-data.org",
@@ -44,38 +35,6 @@ class InvalidKey(Exception):
     """The service rejected the key; the message is safe to show the user."""
 
 
-log = logging.getLogger(__name__)
-ENCRYPTED_PREFIX = "fernet:"
-
-
-def _fernet() -> Fernet | None:
-    if not config.KEYS_ENCRYPTION_KEY:
-        return None
-    # Accept any secret string (like Streamlit's cookie_secret), not just a Fernet-format key.
-    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(config.KEYS_ENCRYPTION_KEY.encode()).digest()))
-
-
-def encrypt(value: str) -> str:
-    fernet = _fernet()
-    if not value or fernet is None:
-        return value
-    return ENCRYPTED_PREFIX + fernet.encrypt(value.encode()).decode()
-
-
-def decrypt(stored: str) -> str:
-    """The plain key. A key that can't be decrypted (missing or changed KEYS_ENCRYPTION_KEY) reads as unset."""
-    if not stored.startswith(ENCRYPTED_PREFIX):
-        return stored  # saved before encryption was turned on
-    fernet = _fernet()
-    try:
-        if fernet is None:
-            raise InvalidToken
-        return fernet.decrypt(stored.removeprefix(ENCRYPTED_PREFIX).encode()).decode()
-    except InvalidToken:
-        log.warning("A stored API key couldn't be decrypted; check KEYS_ENCRYPTION_KEY. Treating it as unset.")
-        return ""
-
-
 def _pick(own: str, shared: str) -> tuple[str, str]:
     if own:
         return own, "yours"
@@ -84,27 +43,11 @@ def _pick(own: str, shared: str) -> tuple[str, str]:
     return "", "none"
 
 
-def for_user(session: Session, user_id: int) -> ApiKeys:
-    own = session.get(UserApiKeys, user_id) or UserApiKeys(user_id=user_id)
-    football, football_source = _pick(decrypt(own.football_data), config.FOOTBALL_DATA_API_KEY)
-    gemini, gemini_source = _pick(decrypt(own.gemini), config.GEMINI_API_KEY)
+def resolve(own: Mapping[str, str]) -> ApiKeys:
+    """The keys in effect, given the user's own keys for this session ({service: key})."""
+    football, football_source = _pick(own.get("football_data", ""), config.FOOTBALL_DATA_API_KEY)
+    gemini, gemini_source = _pick(own.get("gemini", ""), config.GEMINI_API_KEY)
     return ApiKeys(football, gemini, football_source, gemini_source)
-
-
-def own_key(session: Session, user_id: int, service: str) -> str:
-    own = session.get(UserApiKeys, user_id)
-    return decrypt(getattr(own, service)) if own else ""
-
-
-def set_key(session: Session, user_id: int, service: str, value: str) -> None:
-    """Store (or with an empty value, remove) one of the user's keys."""
-    if service not in SERVICES:
-        raise ValueError(service)
-    own = session.get(UserApiKeys, user_id) or UserApiKeys(user_id=user_id)
-    setattr(own, service, encrypt(value.strip()))
-    own.updated_at = utcnow()
-    session.add(own)
-    session.commit()
 
 
 def mask(key: str) -> str:

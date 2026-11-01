@@ -60,6 +60,19 @@ def test_reopening_migrated_db_is_a_no_op(tmp_path):
         db._engine = None
 
 
+def test_previously_saved_api_keys_are_deleted(tmp_path):
+    path = tmp_path / "with_keys.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE userapikeys (user_id INTEGER PRIMARY KEY, football_data VARCHAR, gemini VARCHAR)")
+    conn.execute("INSERT INTO userapikeys VALUES (1, 'plain-football-key', 'plain-gemini-key')")
+    conn.commit()
+    conn.close()
+    db.init_db(path).dispose()
+    db._engine = None
+    tables = {r[0] for r in sqlite3.connect(path).execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "userapikeys" not in tables
+
+
 def test_password_accounts_database_asks_to_start_fresh(tmp_path):
     path = tmp_path / "passwords.db"
     conn = sqlite3.connect(path)

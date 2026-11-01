@@ -74,6 +74,9 @@ def init_db(db_path: Path | None = None, *, url: str = "") -> Engine:
             engine.dispose()
             raise
         migrate_single_user_schema(engine)
+        with engine.begin() as conn:
+            # Users' API keys used to be saved here; they're now kept only in the browser session.
+            conn.exec_driver_sql("DROP TABLE IF EXISTS userapikeys")
         SQLModel.metadata.create_all(engine)
         _create_keyword_index(engine)
         _engine = engine

@@ -17,8 +17,6 @@ DATA_DIR = Path(os.getenv("SPORTS_INFO_DATA_DIR") or PROJECT_ROOT / "data")
 DB_PATH = DATA_DIR / "sports_info.db"
 # Hosted Postgres (e.g. a Neon connection string). Unset: the SQLite file at DB_PATH.
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-# Any long random string; users' own API keys are encrypted with it before they're stored.
-KEYS_ENCRYPTION_KEY = os.getenv("KEYS_ENCRYPTION_KEY", "").strip()
 
 MODELS_DIR = DATA_DIR / "models"
 

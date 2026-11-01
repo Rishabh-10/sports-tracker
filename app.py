@@ -29,7 +29,7 @@ else:
         st.caption(f"Signed in as **{user.name or user.email}**")
         if st.button("Sign out", icon=":material/logout:", width="stretch"):
             sign_out()
-    api_keys.sidebar(user.id)
+    api_keys.sidebar()
     if onboarded:
         st.navigation(pages.main_pages()).run()
     else:

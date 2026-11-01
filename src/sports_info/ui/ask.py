@@ -73,7 +73,7 @@ def render() -> None:
     ensure_fresh()
     ensure_news_fresh()
     data_status_sidebar()
-    llm = get_llm(keys_for(user_id))
+    llm = get_llm(keys_for())
     _conversation_sidebar(user_id, current)
     if llm is not None:
         st.sidebar.caption(f"Answers by {llm.model}")
